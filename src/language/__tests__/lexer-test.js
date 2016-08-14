@@ -10,21 +10,18 @@
 import { expect } from 'chai';
 import { describe, it } from 'mocha';
 import { Source } from '../source';
-import { lex, TokenKind } from '../lexer';
+import { createLexer, TokenKind } from '../lexer';
 
 function lexOne(str) {
-  return lex(new Source(str))();
-}
-
-function lexErr(str) {
-  return lex(new Source(str));
+  const lexer = createLexer(new Source(str));
+  return lexer.advance();
 }
 
 describe('Lexer', () => {
 
   it('disallows uncommon control characters', () => {
 
-    expect(lexErr('\u0007')
+    expect(() => lexOne('\u0007')
     ).to.throw(
       'Syntax Error GraphQL (1:1) Invalid character "\\u0007"'
     );
@@ -33,10 +30,20 @@ describe('Lexer', () => {
 
   it('accepts BOM header', () => {
     expect(lexOne('\uFEFF foo')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.NAME,
       start: 2,
       end: 5,
+      value: 'foo'
+    });
+  });
+
+  it('records line', () => {
+    expect(lexOne('\n \r\n \r  foo\n')).to.containSubset({
+      kind: TokenKind.NAME,
+      start: 8,
+      end: 11,
+      line: 4,
       value: 'foo'
     });
   });
@@ -49,7 +56,7 @@ describe('Lexer', () => {
 
 
 `)
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.NAME,
       start: 6,
       end: 9,
@@ -60,14 +67,14 @@ describe('Lexer', () => {
     #comment
     foo#comment
 `)
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.NAME,
       start: 18,
       end: 21,
       value: 'foo'
     });
 
-    expect(lexOne(',,,foo,,,')).to.deep.equal({
+    expect(lexOne(',,,foo,,,')).to.containSubset({
       kind: TokenKind.NAME,
       start: 3,
       end: 6,
@@ -78,7 +85,7 @@ describe('Lexer', () => {
 
   it('errors respect whitespace', () => {
 
-    expect(lexErr(`
+    expect(() => lexOne(`
 
     ?
 
@@ -99,7 +106,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('"simple"')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.STRING,
       start: 0,
       end: 8,
@@ -108,7 +115,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('" white space "')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.STRING,
       start: 0,
       end: 15,
@@ -117,7 +124,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('"quote \\""')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.STRING,
       start: 0,
       end: 10,
@@ -126,7 +133,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('"escaped \\n\\r\\b\\t\\f"')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.STRING,
       start: 0,
       end: 20,
@@ -135,7 +142,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('"slashes \\\\ \\/"')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.STRING,
       start: 0,
       end: 15,
@@ -144,7 +151,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('"unicode \\u1234\\u5678\\u90AB\\uCDEF"')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.STRING,
       start: 0,
       end: 34,
@@ -156,71 +163,71 @@ describe('Lexer', () => {
   it('lex reports useful string errors', () => {
 
     expect(
-      lexErr('"')
+      () => lexOne('"')
     ).to.throw('Syntax Error GraphQL (1:2) Unterminated string');
 
     expect(
-      lexErr('"no end quote')
+      () => lexOne('"no end quote')
     ).to.throw('Syntax Error GraphQL (1:14) Unterminated string');
 
     expect(
-      lexErr('"contains unescaped \u0007 control char"')
+      () => lexOne('"contains unescaped \u0007 control char"')
     ).to.throw(
       'Syntax Error GraphQL (1:21) Invalid character within String: "\\u0007".'
     );
 
     expect(
-      lexErr('"null-byte is not \u0000 end of file"')
+      () => lexOne('"null-byte is not \u0000 end of file"')
     ).to.throw(
       'Syntax Error GraphQL (1:19) Invalid character within String: "\\u0000".'
     );
 
     expect(
-      lexErr('"multi\nline"')
+      () => lexOne('"multi\nline"')
     ).to.throw('Syntax Error GraphQL (1:7) Unterminated string');
 
     expect(
-      lexErr('"multi\rline"')
+      () => lexOne('"multi\rline"')
     ).to.throw('Syntax Error GraphQL (1:7) Unterminated string');
 
     expect(
-      lexErr('"bad \\z esc"')
+      () => lexOne('"bad \\z esc"')
     ).to.throw(
       'Syntax Error GraphQL (1:7) Invalid character escape sequence: \\z.'
     );
 
     expect(
-      lexErr('"bad \\x esc"')
+      () => lexOne('"bad \\x esc"')
     ).to.throw(
       'Syntax Error GraphQL (1:7) Invalid character escape sequence: \\x.'
     );
 
     expect(
-      lexErr('"bad \\u1 esc"')
+      () => lexOne('"bad \\u1 esc"')
     ).to.throw(
       'Syntax Error GraphQL (1:7) Invalid character escape sequence: \\u1 es.'
     );
 
     expect(
-      lexErr('"bad \\u0XX1 esc"')
+      () => lexOne('"bad \\u0XX1 esc"')
     ).to.throw(
       'Syntax Error GraphQL (1:7) Invalid character escape sequence: \\u0XX1.'
     );
 
     expect(
-      lexErr('"bad \\uXXXX esc"')
+      () => lexOne('"bad \\uXXXX esc"')
     ).to.throw(
       'Syntax Error GraphQL (1:7) Invalid character escape sequence: \\uXXXX.'
     );
 
     expect(
-      lexErr('"bad \\uFXXX esc"')
+      () => lexOne('"bad \\uFXXX esc"')
     ).to.throw(
       'Syntax Error GraphQL (1:7) Invalid character escape sequence: \\uFXXX.'
     );
 
     expect(
-      lexErr('"bad \\uXXXF esc"')
+      () => lexOne('"bad \\uXXXF esc"')
     ).to.throw(
       'Syntax Error GraphQL (1:7) Invalid character escape sequence: \\uXXXF.'
     );
@@ -230,7 +237,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.INT,
       start: 0,
       end: 1,
@@ -239,7 +246,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('4.123')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
@@ -248,7 +255,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('-4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.INT,
       start: 0,
       end: 2,
@@ -257,7 +264,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('9')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.INT,
       start: 0,
       end: 1,
@@ -266,7 +273,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('0')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.INT,
       start: 0,
       end: 1,
@@ -275,7 +282,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('-4.123')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 6,
@@ -284,7 +291,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('0.123')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
@@ -293,7 +300,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('123e4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
@@ -302,7 +309,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('123E4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 5,
@@ -311,7 +318,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('123e-4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 6,
@@ -320,7 +327,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('123e+4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 6,
@@ -329,7 +336,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('-1.123e4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 8,
@@ -338,7 +345,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('-1.123E4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 8,
@@ -347,7 +354,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('-1.123e-4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 9,
@@ -356,7 +363,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('-1.123e+4')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 9,
@@ -365,7 +372,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('-1.123e4567')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.FLOAT,
       start: 0,
       end: 11,
@@ -377,49 +384,49 @@ describe('Lexer', () => {
   it('lex reports useful number errors', () => {
 
     expect(
-      lexErr('00')
+      () => lexOne('00')
     ).to.throw(
       'Syntax Error GraphQL (1:2) Invalid number, ' +
       'unexpected digit after 0: "0".'
     );
 
     expect(
-      lexErr('+1')
+      () => lexOne('+1')
     ).to.throw('Syntax Error GraphQL (1:1) Unexpected character "+"');
 
     expect(
-      lexErr('1.')
+      () => lexOne('1.')
     ).to.throw(
       'Syntax Error GraphQL (1:3) Invalid number, ' +
       'expected digit but got: <EOF>.'
     );
 
     expect(
-      lexErr('.123')
+      () => lexOne('.123')
     ).to.throw('Syntax Error GraphQL (1:1) Unexpected character "."');
 
     expect(
-      lexErr('1.A')
+      () => lexOne('1.A')
     ).to.throw(
       'Syntax Error GraphQL (1:3) Invalid number, ' +
       'expected digit but got: "A".'
     );
 
     expect(
-      lexErr('-A')
+      () => lexOne('-A')
     ).to.throw(
       'Syntax Error GraphQL (1:2) Invalid number, ' +
       'expected digit but got: "A".'
     );
 
     expect(
-      lexErr('1.0e')
+      () => lexOne('1.0e')
     ).to.throw(
       'Syntax Error GraphQL (1:5) Invalid number, ' +
       'expected digit but got: <EOF>.');
 
     expect(
-      lexErr('1.0eA')
+      () => lexOne('1.0eA')
     ).to.throw(
       'Syntax Error GraphQL (1:5) Invalid number, ' +
       'expected digit but got: "A".'
@@ -430,7 +437,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('!')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.BANG,
       start: 0,
       end: 1,
@@ -439,7 +446,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('$')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.DOLLAR,
       start: 0,
       end: 1,
@@ -448,7 +455,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('(')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.PAREN_L,
       start: 0,
       end: 1,
@@ -457,7 +464,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne(')')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.PAREN_R,
       start: 0,
       end: 1,
@@ -466,7 +473,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('...')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.SPREAD,
       start: 0,
       end: 3,
@@ -475,7 +482,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne(':')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.COLON,
       start: 0,
       end: 1,
@@ -484,7 +491,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('=')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.EQUALS,
       start: 0,
       end: 1,
@@ -493,7 +500,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('@')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.AT,
       start: 0,
       end: 1,
@@ -502,7 +509,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('[')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.BRACKET_L,
       start: 0,
       end: 1,
@@ -511,7 +518,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne(']')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.BRACKET_R,
       start: 0,
       end: 1,
@@ -520,7 +527,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('{')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.BRACE_L,
       start: 0,
       end: 1,
@@ -529,7 +536,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('|')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.PIPE,
       start: 0,
       end: 1,
@@ -538,7 +545,7 @@ describe('Lexer', () => {
 
     expect(
       lexOne('}')
-    ).to.deep.equal({
+    ).to.containSubset({
       kind: TokenKind.BRACE_R,
       start: 0,
       end: 1,
@@ -550,34 +557,34 @@ describe('Lexer', () => {
   it('lex reports useful unknown character error', () => {
 
     expect(
-      lexErr('..')
+      () => lexOne('..')
     ).to.throw('Syntax Error GraphQL (1:1) Unexpected character "."');
 
     expect(
-      lexErr('?')
+      () => lexOne('?')
     ).to.throw('Syntax Error GraphQL (1:1) Unexpected character "?"');
 
     expect(
-      lexErr('\u203B')
+      () => lexOne('\u203B')
     ).to.throw('Syntax Error GraphQL (1:1) Unexpected character "\\u203B"');
 
     expect(
-      lexErr('\u200b')
+      () => lexOne('\u200b')
     ).to.throw('Syntax Error GraphQL (1:1) Unexpected character "\\u200B"');
   });
 
   it('lex reports useful information for dashes in names', () => {
     const q = 'a-b';
-    const lexer = lex(new Source(q));
-    const firstToken = lexer();
-    expect(firstToken).to.deep.equal({
+    const lexer = createLexer(new Source(q));
+    const firstToken = lexer.advance();
+    expect(firstToken).to.containSubset({
       kind: TokenKind.NAME,
       start: 0,
       end: 1,
       value: 'a'
     });
     expect(
-      () => lexer()
+      () => lexer.advance()
     ).to.throw(
       'Syntax Error GraphQL (1:3) Invalid number, expected digit but got: "b".'
     );

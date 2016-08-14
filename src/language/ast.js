@@ -12,14 +12,96 @@ import type { Source } from './source';
 
 
 /**
- * Contains a range of UTF-8 character offsets that identify
- * the region of the source from which the AST derived.
+ * Contains a range of UTF-8 character offsets and token references that
+ * identify the region of the source from which the AST derived.
  */
 export type Location = {
+
+  /**
+   * The character offset at which this Node begins.
+   */
   start: number;
+
+  /**
+   * The character offset at which this Node ends.
+   */
   end: number;
-  source?: ?Source
-}
+
+  /**
+   * The Token at which this Node begins.
+   */
+  startToken: Token;
+
+  /**
+   * The Token at which this Node ends.
+   */
+  endToken: Token;
+
+  /**
+   * The Source document the AST represents.
+   */
+  source: Source;
+};
+
+/**
+ * Represents a range of characters represented by a lexical token
+ * within a Source.
+ */
+export type Token = {
+
+  /**
+   * The kind of Token.
+   */
+  kind: '<SOF>'
+      | '<EOF>'
+      | '!'
+      | '$'
+      | '('
+      | ')'
+      | ','
+      | '...'
+      | ':'
+      | '='
+      | '@'
+      | '['
+      | ']'
+      | '{'
+      | '|'
+      | '}'
+      | 'Name'
+      | 'Int'
+      | 'Float'
+      | 'String'
+      | 'Comment';
+
+  /**
+   * The character offset at which this Node begins.
+   */
+  start: number;
+
+  /**
+   * The character offset at which this Node ends.
+   */
+  end: number;
+
+  /**
+   * The 1-indexed line number on which this Token appears.
+   */
+  line: number;
+
+  /**
+   * For non-punctuation tokens, represents the interpreted value of the token.
+   */
+  value: ?string;
+
+  /**
+   * Tokens exist as nodes in a double-linked-list amongst all tokens
+   * including ignored tokens. <SOF> is always the first node and <EOF>
+   * the last.
+   */
+  prev: ?Token;
+  next: ?Token;
+};
 
 /**
  * The list of all possible AST node types.
