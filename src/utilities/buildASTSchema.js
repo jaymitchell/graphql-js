@@ -13,7 +13,7 @@ import invariant from '../jsutils/invariant';
 import keyMap from '../jsutils/keyMap';
 import keyValMap from '../jsutils/keyValMap';
 import { valueFromAST } from './valueFromAST';
-
+import { TokenKind } from '../language/lexer';
 import { getArgumentValues } from '../execution/values';
 
 import {
@@ -258,9 +258,54 @@ export function buildASTSchema(ast: Document): GraphQLSchema {
     directives,
   });
 
+  /**
+   * Given an ast node, returns its string description based on a contiguous
+   * block full-line of comments preceding it.
+   */
+  function getDescription(node): ?string {
+    const loc = node.loc;
+    if (!loc) {
+      return;
+    }
+    const comments = [];
+    let minSpaces;
+    let token = loc.startToken.prev;
+    while (
+      token &&
+      token.kind === TokenKind.COMMENT &&
+      token.next && token.prev &&
+      token.line + 1 === token.next.line &&
+      token.line !== token.prev.line
+    ) {
+      const value = String(token.value);
+      const spaces = leadingSpaces(value);
+      if (minSpaces === undefined || spaces < minSpaces) {
+        minSpaces = spaces;
+      }
+      comments.push(value);
+      token = token.prev;
+    }
+    return comments
+      .reverse()
+      .map(comment => comment.slice(minSpaces))
+      .join('\n');
+  }
+
+  // Count the number of spaces on the starting side of a string.
+  function leadingSpaces(str) {
+    let i = 0;
+    for (; i < str.length; i++) {
+      if (str[i] !== ' ') {
+        break;
+      }
+    }
+    return i;
+  }
+
   function getDirective(directiveAST: DirectiveDefinition): GraphQLDirective {
     return new GraphQLDirective({
       name: directiveAST.name.value,
+      description: getDescription(directiveAST),
       locations: directiveAST.locations.map(
         node => ((node.value: any): DirectiveLocationEnum)
       ),
@@ -348,12 +393,12 @@ export function buildASTSchema(ast: Document): GraphQLSchema {
 
   function makeTypeDef(def: ObjectTypeDefinition) {
     const typeName = def.name.value;
-    const config = {
+    return new GraphQLObjectType({
       name: typeName,
+      description: getDescription(def),
       fields: () => makeFieldDefMap(def),
       interfaces: () => makeImplementedInterfaces(def),
-    };
-    return new GraphQLObjectType(config);
+    });
   }
 
   function makeFieldDefMap(
@@ -364,6 +409,7 @@ export function buildASTSchema(ast: Document): GraphQLSchema {
       field => field.name.value,
       field => ({
         type: produceOutputType(field.type),
+        description: getDescription(field),
         args: makeInputValues(field.arguments),
         deprecationReason: getDeprecationReason(field.directives)
       })
@@ -381,28 +427,34 @@ export function buildASTSchema(ast: Document): GraphQLSchema {
       value => value.name.value,
       value => {
         const type = produceInputType(value.type);
-        return { type, defaultValue: valueFromAST(value.defaultValue, type) };
+        return {
+          type,
+          description: getDescription(value),
+          defaultValue: valueFromAST(value.defaultValue, type)
+        };
       }
     );
   }
 
   function makeInterfaceDef(def: InterfaceTypeDefinition) {
     const typeName = def.name.value;
-    const config = {
+    return new GraphQLInterfaceType({
       name: typeName,
+      description: getDescription(def),
       resolveType: () => null,
       fields: () => makeFieldDefMap(def),
-    };
-    return new GraphQLInterfaceType(config);
+    });
   }
 
   function makeEnumDef(def: EnumTypeDefinition) {
     const enumType = new GraphQLEnumType({
       name: def.name.value,
+      description: getDescription(def),
       values: keyValMap(
         def.values,
         enumValue => enumValue.name.value,
         enumValue => ({
+          description: getDescription(enumValue),
           deprecationReason: getDeprecationReason(enumValue.directives)
         })
       ),
@@ -414,6 +466,7 @@ export function buildASTSchema(ast: Document): GraphQLSchema {
   function makeUnionDef(def: UnionTypeDefinition) {
     return new GraphQLUnionType({
       name: def.name.value,
+      description: getDescription(def),
       resolveType: () => null,
       types: def.types.map(t => produceObjectType(t)),
     });
@@ -422,6 +475,7 @@ export function buildASTSchema(ast: Document): GraphQLSchema {
   function makeScalarDef(def: ScalarTypeDefinition) {
     return new GraphQLScalarType({
       name: def.name.value,
+      description: getDescription(def),
       serialize: () => null,
       // Note: validation calls the parse functions to determine if a
       // literal value is correct. Returning null would cause use of custom
@@ -435,6 +489,7 @@ export function buildASTSchema(ast: Document): GraphQLSchema {
   function makeInputObjectDef(def: InputObjectTypeDefinition) {
     return new GraphQLInputObjectType({
       name: def.name.value,
+      description: getDescription(def),
       fields: () => makeInputValues(def.fields),
     });
   }
